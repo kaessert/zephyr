@@ -271,6 +271,8 @@ static int adxl345_attr_set(const struct device *dev,
 	switch (attr) {
 	case SENSOR_ATTR_SAMPLING_FREQUENCY:
 		return adxl345_attr_set_odr(dev, chan, attr, val);
+        case SENSOR_ATTR_UPPER_THRESH:
+                return adxl345_reg_write_byte(dev, ADXL345_THRESH_ACT_REG, val->val1);
 	default:
 		return -ENOTSUP;
 	}
@@ -503,6 +505,10 @@ static int adxl345_init(const struct device *dev)
 	if (rc) {
 		return rc;
 	}
+	rc = adxl345_interrupt_config(dev, ADXL345_INT_MAP_ACT_MSK);
+	if (rc) {
+		return rc;
+	}
 #endif
 
 	rc = adxl345_reg_read_byte(dev, ADXL345_DATA_FORMAT_REG, &full_res);
@@ -530,7 +536,7 @@ static int adxl345_init(const struct device *dev)
 		.fifo_config.fifo_mode = ADXL345_FIFO_STREAMED,				\
 		.fifo_config.fifo_trigger = ADXL345_INT2,			\
 		.fifo_config.fifo_samples = SAMPLE_NUM,					\
-		.op_mode = TRUE,					\
+		.op_mode = 1,					\
 		.odr = ADXL345_RATE_25HZ,						\
 
 #define ADXL345_CONFIG_SPI(inst)                                       \

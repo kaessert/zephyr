@@ -11,6 +11,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/pm/device.h>
 #include <zephyr/sys/__assert.h>
 
 #include "adxl345.h"
@@ -271,8 +272,8 @@ static int adxl345_attr_set(const struct device *dev,
 	switch (attr) {
 	case SENSOR_ATTR_SAMPLING_FREQUENCY:
 		return adxl345_attr_set_odr(dev, chan, attr, val);
-        case SENSOR_ATTR_UPPER_THRESH:
-                return adxl345_reg_write_byte(dev, ADXL345_THRESH_ACT_REG, val->val1);
+	case SENSOR_ATTR_UPPER_THRESH:
+		return adxl345_reg_write_byte(dev, ADXL345_THRESH_ACT_REG, val->val1);
 	default:
 		return -ENOTSUP;
 	}
@@ -490,6 +491,9 @@ static int adxl345_init(const struct device *dev)
 		return -EIO;
 	}
 
+	/* Initialize op_mode to reflect current state */
+	data->op_mode = ADXL345_MEASURE;
+
 #ifdef CONFIG_ADXL345_TRIGGER
 	rc = adxl345_init_interrupt(dev);
 	if (rc < 0) {
@@ -517,6 +521,34 @@ static int adxl345_init(const struct device *dev)
 	data->is_full_res = is_full_res_set;
 	return 0;
 }
+
+#ifdef CONFIG_PM_DEVICE
+static int adxl345_pm_action(const struct device *dev,
+			     enum pm_device_action action)
+{
+	struct adxl345_dev_data *data = dev->data;
+	int rc;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		/* Resume to measurement mode */
+		rc = adxl345_set_op_mode(dev, ADXL345_MEASURE);
+		if (rc == 0) {
+			data->op_mode = ADXL345_MEASURE;
+		}
+		return rc;
+	case PM_DEVICE_ACTION_SUSPEND:
+		/* Enter standby mode for low power */
+		rc = adxl345_set_op_mode(dev, ADXL345_STANDBY);
+		if (rc == 0) {
+			data->op_mode = ADXL345_STANDBY;
+		}
+		return rc;
+	default:
+		return -ENOTSUP;
+	}
+}
+#endif /* CONFIG_PM_DEVICE */
 
 #ifdef CONFIG_ADXL345_TRIGGER
 #define ADXL345_CFG_IRQ(inst) \
@@ -571,7 +603,8 @@ static int adxl345_init(const struct device *dev)
 		COND_CODE_1(DT_INST_ON_BUS(inst, spi), (ADXL345_CONFIG_SPI(inst)),      \
 			    (ADXL345_CONFIG_I2C(inst)));                                \
                                                                                         \
-	SENSOR_DEVICE_DT_INST_DEFINE(inst, adxl345_init, NULL,				\
+	PM_DEVICE_DT_INST_DEFINE(inst, adxl345_pm_action);				\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, adxl345_init, PM_DEVICE_DT_INST_GET(inst),	\
 			      &adxl345_data_##inst, &adxl345_config_##inst, POST_KERNEL,\
 			      CONFIG_SENSOR_INIT_PRIORITY, &adxl345_api_funcs);		\
 
